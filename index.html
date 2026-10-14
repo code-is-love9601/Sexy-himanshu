@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BusAI Navigator - Smart Bus Management System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0B1220; color: #F8FAFC; }
+        .card { background-color: #111827; border: 1px solid #374151; }
+        .map-container { width: 100%; height: 100%; background-color: #0B1220; min-height: 400px; }
+        .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9); }
+        .leaflet-container { background: #0B1220; }
+        .leaflet-bar { border: 1px solid #374151; }
+        .leaflet-bar a { background-color: #111827; color: white; border-bottom: 1px solid #374151; }
+        .leaflet-bar a:hover { background-color: #1f2937; }
+        .leaflet-control-attribution { background: rgba(17, 24, 39, 0.8) !important; color: #9ca3af !important; }
+        .leaflet-control-attribution a { color: #818cf8 !important; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #111827; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+        .card-link { background-color: #111827; border: 1px solid #374151; transition: all 0.3s ease; }
+        .card-link:hover { transform: translateY(-4px); border-color: #6366f1; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.2); }
+        .view-section { display: none; }
+        .view-section.active { display: flex; flex-direction: column; height: 100vh; }
+    </style>
+</head>
+<body class="overflow-x-hidden h-screen">
+
+    <!-- VIEW 1: HOME / LANDING -->
+    <div id="view-home" class="view-section active items-center justify-center min-h-screen p-4 bg-[radial-gradient(circle_at_50%_50%,#1e293b_0%,#0b1220_100%)]">
+        <div class="max-w-4xl w-full mx-auto text-center">
+            <div class="mb-12">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 text-white text-3xl mb-4 shadow-lg">
+                    <i class="fa-solid fa-bus"></i>
+                </div>
+                <h1 class="text-4xl md:text-5xl font-bold tracking-tight mb-3">Welcome to BusAI Navigator</h1>
+                <p class="text-gray-400 text-lg">Your intelligent transit management and tracking solution.</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <button onclick="switchView('operator')" class="card-link p-8 rounded-2xl flex flex-col items-center text-center cursor-pointer w-full">
+                    <div class="w-14 h-14 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-2xl mb-6">
+                        <i class="fa-solid fa-user-shield"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white mb-2">Operator Dashboard</h2>
+                    <p class="text-gray-400 text-sm">Access the full suite of tools for fleet management, real-time analytics, and AI-powered operational alerts.</p>
+                </button>
+                <button onclick="switchView('user')" class="card-link p-8 rounded-2xl flex flex-col items-center text-center cursor-pointer w-full">
+                    <div class="w-14 h-14 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-2xl mb-6">
+                        <i class="fa-solid fa-user"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white mb-2">User Dashboard</h2>
+                    <p class="text-gray-400 text-sm">Quickly search for and track your bus in real-time. Get live status updates and location information on the map.</p>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW 2: OPERATOR DASHBOARD -->
+    <div id="view-operator" class="view-section">
+        <!-- Header -->
+        <header class="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-[#111827] flex-shrink-0">
+            <div class="flex items-center space-x-3">
+                <button onclick="switchView('home')" class="text-gray-400 hover:text-white mr-2"><i class="fa-solid fa-arrow-left"></i> Home</button>
+                <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white text-xl">
+                    <i class="fa-solid fa-bus"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight">BusAI Navigator - Operator Mode</h1>
+                    <p class="text-xs text-gray-400">Intelligent transit management & tracking solution.</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-6 text-sm">
+                <div id="operator-time" class="text-gray-400 font-medium"></div>
+                <div class="flex items-center space-x-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-yellow-400" id="op-status-indicator"></span>
+                    <span id="op-status-message" class="text-yellow-400 text-xs">Connecting...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Layout -->
+        <main class="flex-1 flex flex-col lg:flex-row gap-4 p-4 overflow-hidden">
+            <section class="flex-1 flex flex-col gap-4 overflow-y-hidden">
+                <div class="card rounded-lg p-4 flex flex-col flex-shrink-0">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="font-semibold text-sm">Location: Delhi, NCT</span>
+                        <form id="op-search-form" class="flex items-center">
+                            <input type="text" id="op-search-input" placeholder="Search Bus ID (e.g., DL1PD4748)" class="bg-gray-900 border border-gray-700 rounded-l px-3 py-1.5 text-xs text-white focus:outline-none">
+                            <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-r text-xs">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                            </button>
+                        </form>
+                    </div>
+                    <div id="operator-map" class="map-container rounded border border-gray-800" style="height: 360px;"></div>
+                </div>
+
+                <div class="card rounded-lg p-4 flex-1 flex flex-col overflow-hidden">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-semibold text-gray-400"><i class="fa-solid fa-chart-line mr-1.5"></i>System Analytics</span>
+                        <span id="ics-analytics-summary" class="text-xs text-gray-400">Total in Feed: 0 | Displayed: 0</span>
+                    </div>
+                    <div class="h-32 flex-1 relative">
+                        <canvas id="delay-chart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="w-full lg:w-96 flex flex-col gap-4 overflow-hidden">
+                <div class="card rounded-lg p-4 flex flex-col flex-shrink-0">
+                    <span class="text-xs font-semibold text-red-400 flex items-center mb-2">
+                        <i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Critical Alerts
+                    </span>
+                    <div id="db-alerts-container" class="space-y-2 max-h-36 overflow-y-auto text-xs">
+                        <div class="text-gray-500 text-center py-2">No critical alerts.</div>
+                    </div>
+                </div>
+
+                <div class="card rounded-lg p-4 flex-1 flex flex-col overflow-hidden">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-semibold text-gray-300 flex items-center">
+                            <i class="fa-solid fa-clipboard-list mr-1.5"></i>Live Bus Status
+                        </span>
+                        <span id="bus-count-badge" class="text-[10px] bg-gray-800 px-2 py-0.5 rounded text-gray-400">0 Buses</span>
+                    </div>
+                    <div id="bus-status-container" class="space-y-2 flex-1 overflow-y-auto pr-1">
+                        <div class="text-gray-500 text-center py-4">Waiting for live data...</div>
+                    </div>
+                </div>
+
+                <div class="card rounded-lg p-4 flex flex-col flex-shrink-0">
+                    <span class="text-xs font-semibold text-indigo-400 flex items-center mb-2">
+                        <i class="fa-solid fa-brain mr-1.5"></i>AI Predictions
+                    </span>
+                    <div id="ai-suggestions" class="space-y-2 max-h-32 overflow-y-auto text-xs">
+                        <div class="text-gray-500 text-center py-2">Analyzing fleet data...</div>
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <!-- VIEW 3: USER DASHBOARD -->
+    <div id="view-user" class="view-section relative h-screen overflow-hidden">
+        <div id="user-map" class="map-container absolute top-0 left-0 h-full w-full z-0"></div>
+        <div class="absolute top-4 left-4 z-[1000] w-80 bg-[#111827]/90 backdrop-blur border border-gray-700 p-4 rounded-xl shadow-xl">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+                        <i class="fa-solid fa-bus"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-bold text-sm text-white">BusAI Navigator</h2>
+                        <p class="text-[10px] text-gray-400">Track your bus in real-time</p>
+                    </div>
+                </div>
+                <button onclick="switchView('home')" class="text-xs text-gray-400 hover:text-white px-2 py-1 bg-gray-800 rounded">Home</button>
+            </div>
+            <form id="user-search-form" class="relative">
+                <input type="text" id="user-bus-input" placeholder="Enter Bus ID (e.g., DL1PD4748)" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-500">
+                <button type="submit" class="absolute right-1 top-1 bottom-1 px-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-md text-xs">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                </button>
+            </form>
+            <div id="user-tracking-status" class="mt-3 text-xs text-gray-400"></div>
+        </div>
+    </div>
+
+    <script>
+        let opMap = null, userMap = null, delayChart = null;
+        let busMarkersOp = new Map();
+        let busMarkersUser = new Map();
+        const MAP_CENTER = [28.6139, 77.2090];
+
+        function switchView(viewName) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            if (viewName === 'home') {
+                document.getElementById('view-home').classList.add('active');
+            } else if (viewName === 'operator') {
+                document.getElementById('view-operator').classList.add('active');
+                setTimeout(() => {
+                    if (!opMap) initOperatorMap();
+                    else opMap.invalidateSize();
+                }, 100);
+            } else if (viewName === 'user') {
+                document.getElementById('view-user').classList.add('active');
+                setTimeout(() => {
+                    if (!userMap) initUserMap();
+                    else userMap.invalidateSize();
+                }, 100);
+            }
+        }
+
+        // Clock
+        setInterval(() => {
+            const now = new Date();
+            const timeStr = now.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }) + " " + now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" });
+            const clockEl = document.getElementById('operator-time');
+            if (clockEl) clockEl.textContent = timeStr;
+        }, 1000);
+
+        function initOperatorMap() {
+            opMap = L.map('operator-map', { zoomControl: false }).setView(MAP_CENTER, 12);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(opMap);
+            L.control.zoom({ position: 'topleft' }).addTo(opMap);
+
+            const ctx = document.getElementById('delay-chart').getContext('2d');
+            delayChart = new Chart(ctx, {
+                type: 'bar',
+                data: { labels: [], datasets: [{ label: 'Delay (min)', data: [], backgroundColor: [] }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+        }
+
+        function initUserMap() {
+            userMap = L.map('user-map', { zoomControl: false }).setView(MAP_CENTER, 12);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(userMap);
+            L.control.zoom({ position: 'bottomright' }).addTo(userMap);
+        }
+
+        function getColorForDelay(delay) {
+            if (delay <= 2) return '#22c55e';
+            if (delay <= 10) return '#eab308';
+            return '#ef4444';
+        }
+
+        // Socket.io connection to backend
+        const socket = io('http://localhost:5000');
+
+        socket.on('connect', () => {
+            const ind = document.getElementById('op-status-indicator');
+            const msg = document.getElementById('op-status-message');
+            if (ind && msg) {
+                ind.className = "w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse";
+                msg.textContent = "Live connection active";
+                msg.className = "text-green-400 text-xs";
+            }
+        });
+
+        socket.on('disconnect', () => {
+            const ind = document.getElementById('op-status-indicator');
+            const msg = document.getElementById('op-status-message');
+            if (ind && msg) {
+                ind.className = "w-2.5 h-2.5 rounded-full bg-red-500";
+                msg.textContent = "Connection lost";
+                msg.className = "text-red-400 text-xs";
+            }
+        });
+
+        socket.on('bus-update', (data) => {
+            const buses = data.buses || [];
+            
+            // Render Operator sidebar list
+            const container = document.getElementById('bus-status-container');
+            const badge = document.getElementById('bus-count-badge');
+            if (container && badge) {
+                container.innerHTML = '';
+                badge.textContent = `${buses.length} Buses`;
+                buses.forEach(bus => {
+                    const el = document.createElement('div');
+                    el.className = 'p-2 rounded bg-gray-900/60 border border-gray-800 flex items-center justify-between text-xs';
+                    const color = getColorForDelay(bus.delay);
+                    el.innerHTML = `
+                        <div>
+                            <div class="font-bold text-white">${bus.busId} <span class="text-gray-400 font-normal">- Route ${bus.routeId || 'N/A'}</span></div>
+                            <div class="text-[10px] text-gray-400">Lat:${bus.lat.toFixed(4)} Lng:${bus.lng.toFixed(4)}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-semibold" style="color: ${color};">Delay ${bus.delay}m</div>
+                            <div class="text-[10px] text-gray-400">${bus.speed || 0} km/h</div>
+                        </div>
+                    `;
+                    container.appendChild(el);
+                });
+            }
+
+            // Update Operator Map Markers
+            if (opMap) {
+                buses.forEach(b => {
+                    let marker = busMarkersOp.get(b.busId);
+                    if (marker) {
+                        marker.setLatLng([b.lat, b.lng]);
+                    } else {
+                        const m = L.marker([b.lat, b.lng]).addTo(opMap);
+                        busMarkersOp.set(b.busId, m);
+                    }
+                });
+            }
+        });
+
+        // User tracking search form
+        const userForm = document.getElementById('user-search-form');
+        if (userForm) {
+            userForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const busId = document.getElementById('user-bus-input').value.trim();
+                const statusEl = document.getElementById('user-tracking-status');
+                if (!busId) return;
+                
+                socket.emit('track-bus', busId);
+                if (statusEl) statusEl.textContent = `Tracking bus ID: ${busId}...`;
+            });
+        }
+    </script>
+</body>
+</html>
